@@ -1,0 +1,13 @@
+name = "proxy-backend"
+main = "worker.js"
+compatibility_date = "2023-10-30"
+
+# Для включения Cron trigger раскомментируйте:
+# [triggers]
+# crons = ["*/15 * * * *"]
+
+# Для использования KV namespace создайте его через `wrangler kv:namespace create PROXY_KV`
+# и добавьте id ниже:
+# [[kv_namespaces]]
+# binding = "PROXY_KV"
+# id = "your-kv-id"
