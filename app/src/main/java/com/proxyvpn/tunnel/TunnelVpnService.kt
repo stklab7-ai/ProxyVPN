@@ -17,6 +17,7 @@ import kotlinx.coroutines.*
 class TunnelVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
+    private var socketPair: Array<ParcelFileDescriptor>? = null
     private var byedpiProcess: Process? = null
     private var ssProcess: Process? = null
     private var xrayProcess: Process? = null
@@ -58,6 +59,7 @@ class TunnelVpnService : VpnService() {
                 val prefs = getSharedPreferences("proxy_favorites", android.content.Context.MODE_PRIVATE)
                 val customDns = prefs.getString("custom_dns", "1.1.1.1") ?: "1.1.1.1"
                 val customMtu = prefs.getString("custom_mtu", "1280")?.toIntOrNull() ?: 1280
+                val encryptedDns = prefs.getBoolean("encrypted_dns", false)
 
                 val builder = Builder()
                     .setSession("ProxyVPN Tunnel")
@@ -150,7 +152,28 @@ val byedpiArgsStr = prefs.getString("byedpi_args", "--split 1 --auto=torst --tls
                 """.trimIndent()
                 java.io.File(configPath).writeText(configContent)
 
-                val success = NativeBridge.TProxyStartService(configPath, fd)
+                val success: Boolean
+                if (encryptedDns) {
+                    val fd1 = java.io.FileDescriptor()
+                    val fd2 = java.io.FileDescriptor()
+                    android.system.Os.socketpair(android.system.OsConstants.AF_UNIX, android.system.OsConstants.SOCK_DGRAM, 0, fd1, fd2)
+                    socketPair = arrayOf(
+                        ParcelFileDescriptor.dup(fd1),
+                        ParcelFileDescriptor.dup(fd2)
+                    )
+                    val tunFd = vpnInterface!!
+                    val proxyFd = socketPair!![1]
+                    val interceptorFd = socketPair!![0]
+                    
+                    val dohResolver = DohResolver()
+                    val interceptor = TunPacketInterceptor(tunFd, interceptorFd, dohResolver)
+                    interceptor.start(scope)
+                    
+                    success = NativeBridge.TProxyStartService(configPath, proxyFd.fd)
+                } else {
+                    success = NativeBridge.TProxyStartService(configPath, fd)
+                }
+                
                 if (success) {
                     updateNotification("Подключение к $proxyIp")
                 } else {
@@ -166,6 +189,8 @@ val byedpiArgsStr = prefs.getString("byedpi_args", "--split 1 --auto=torst --tls
     private fun stopVpn() {
         scope.launch {
             NativeBridge.TProxyStopService()
+            socketPair?.forEach { try { it.close() } catch(e:Exception){} }
+            socketPair = null
             vpnInterface?.close()
             vpnInterface = null
             val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
