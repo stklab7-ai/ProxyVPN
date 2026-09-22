@@ -19,8 +19,7 @@ class TunnelVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var socketPair: Array<ParcelFileDescriptor>? = null
     private var byedpiProcess: Process? = null
-    private var ssProcess: Process? = null
-    private var xrayProcess: Process? = null
+        private var xrayProcess: Process? = null
     private val scope = CoroutineScope(Dispatchers.IO + Job())
 
     companion object {
@@ -81,37 +80,25 @@ class TunnelVpnService : VpnService() {
                 // Write config.yaml
 
                 
-                var targetIp = proxyIp
-                var targetPort = proxyPort
-                var localSocksPort = 10800
-                
-                if (method == "VLESS" && password != null) {
-                    localSocksPort = 10801
-                    startXrayLocal(proxyIp, proxyPort, password, proxyIp, localSocksPort)
-                    targetIp = "127.0.0.1"
-                    targetPort = localSocksPort
-                } else if (method != null && password != null && method != "VLESS") {
-                    localSocksPort = 10802
-                    startShadowsocksLocal(proxyIp, proxyPort, method, password, localSocksPort)
-                    targetIp = "127.0.0.1"
-                    targetPort = localSocksPort
-                }
+                var targetIp = "127.0.0.1"
+                var targetPort = 10808
                 
                 val byedpiEnabled = prefs.getBoolean("byedpi", false)
 
-                // Skip ByeDPI if using a custom protocol like VLESS/Shadowsocks
+                // If no method, it's a plain SOCKS5/HTTP proxy.
                 if (byedpiEnabled && method == null) {
                     try {
                         val ciadpiPath = applicationInfo.nativeLibraryDir + "/libciadpi.so"
-                        val port = 10800
+                        targetPort = 10800
 
-val byedpiArgsStr = prefs.getString("byedpi_args", "--split 1 --auto=torst --tlsrec 1+s") ?: "--split 1 --auto=torst --tlsrec 1+s"
-                        val argsList = mutableListOf(ciadpiPath, "--port", port.toString())
+                        val byedpiArgsStr = prefs.getString("byedpi_args", "--split 1 --auto=torst --tlsrec 1+s") ?: "--split 1 --auto=torst --tlsrec 1+s"
+                        val argsList = mutableListOf(ciadpiPath, "-p", targetPort.toString())
                         argsList.addAll(byedpiArgsStr.split(" ").filter { it.isNotBlank() })
-                      if (!argsList.contains("-U")) argsList.add("-U")
+                        if (!argsList.contains("-U")) argsList.add("-U")
                         
                         android.util.Log.d("ProxyVPN", "Starting ciadpi with args: $argsList")
                         byedpiProcess = ProcessBuilder(argsList)
+                            .directory(cacheDir)
                             .redirectErrorStream(true)
                             .start()
                             
@@ -120,19 +107,18 @@ val byedpiArgsStr = prefs.getString("byedpi_args", "--split 1 --auto=torst --tls
                                 val reader = java.io.BufferedReader(java.io.InputStreamReader(byedpiProcess!!.inputStream))
                                 var line: String?
                                 while (reader.readLine().also { line = it } != null) {
-                                    android.util.Log.d("ProxyVPN-ciadpi", line ?: "")
+                                    android.util.Log.d("ByeDPI", line ?: "")
                                 }
                             } catch (e: Exception) {}
                         }.start()
-
-                        targetIp = "127.0.0.1"
-                        targetPort = port
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
+                } else {
+                    startXrayCore(proxyIp, proxyPort, method, password, targetPort)
                 }
                 
-                val configPath = cacheDir.absolutePath + "/config.yaml"
+                val configPath = cacheDir.absolutePath + "/config.yaml" 
 
                 val configContent = """
                     tunnel:
@@ -197,8 +183,7 @@ val byedpiArgsStr = prefs.getString("byedpi_args", "--split 1 --auto=torst --tls
             manager.cancel(NOTIFICATION_ID)
             
         byedpiProcess?.destroy()
-        ssProcess?.destroy()
-        xrayProcess?.destroy()
+                xrayProcess?.destroy()
         byedpiProcess = null
         stopSelf()
 
@@ -239,106 +224,107 @@ val byedpiArgsStr = prefs.getString("byedpi_args", "--split 1 --auto=torst --tls
         scope.cancel()
     }
 
-    private fun startXrayLocal(remoteHost: String, remotePort: Int, uuid: String, sni: String, localPort: Int) {
-        val resolvedIp = try {
-            java.net.InetAddress.getAllByName(remoteHost).firstOrNull { it is java.net.Inet4Address }?.hostAddress ?: java.net.InetAddress.getByName(remoteHost).hostAddress
-        } catch (e: Exception) {
-            "104.21.93.131" // fallback to CF worker IP
-        }
-
+    private fun startXrayCore(remoteHost: String, remotePort: Int, method: String?, password: String?, localPort: Int) {
         try {
-            val xrayPath = File(applicationInfo.nativeLibraryDir, "libxray.so").absolutePath
-            val configFile = File(cacheDir, "xray_config.json")
+            val xrayPath = java.io.File(applicationInfo.nativeLibraryDir, "libxray.so").absolutePath
+            val configFile = java.io.File(cacheDir, "xray_config.json")
             
-            // Generate Xray config for VLESS over WebSocket (Cloudflare)
+            val resolvedIp = try {
+                java.net.InetAddress.getAllByName(remoteHost).firstOrNull { it is java.net.Inet4Address }?.hostAddress ?: java.net.InetAddress.getByName(remoteHost).hostAddress
+            } catch (e: Exception) {
+                remoteHost
+            }
+
+            var outboundJson = ""
+            
+            if (method == "VLESS") {
+                outboundJson = """{
+                    "tag": "proxy",
+                    "protocol": "vless",
+                    "settings": {
+                        "vnext": [{
+                            "address": "$resolvedIp",
+                            "port": remotePort,
+                            "users": [{ "id": "$password", "encryption": "none", "level": 0 }]
+                        }]
+                    },
+                    "streamSettings": {
+                        "network": "ws",
+                        "security": "tls",
+                        "tlsSettings": {
+                            "serverName": "$remoteHost",
+                            "allowInsecure": false,
+                            "fingerprint": "chrome"
+                        },
+                        "wsSettings": {
+                            "path": "/?ed=2048",
+                            "headers": { "Host": "$remoteHost" }
+                        },
+                        "sockopt": { "dialerProxy": "fragment-out", "tcpNoDelay": true }
+                    }
+                },
+                {
+                    "tag": "fragment-out",
+                    "protocol": "freedom",
+                    "settings": {
+                        "fragment": { "packets": "1-3", "length": "20-50", "interval": "10-20" }
+                    },
+                    "streamSettings": { "sockopt": { "tcpNoDelay": true } }
+                }"""
+            } else if (method != null && password != null) {
+                outboundJson = """{
+                    "tag": "proxy",
+                    "protocol": "shadowsocks",
+                    "settings": {
+                        "servers": [{
+                            "address": "$resolvedIp",
+                            "port": remotePort,
+                            "method": "$method",
+                            "password": "$password",
+                            "level": 0
+                        }]
+                    }
+                }"""
+            } else {
+                outboundJson = """{
+                    "tag": "proxy",
+                    "protocol": "socks",
+                    "settings": {
+                        "servers": [{
+                            "address": "$resolvedIp",
+                            "port": remotePort
+                        }]
+                    }
+                }"""
+            }
+
             val configJson = """{
-  "log": {
-    "loglevel": "debug"
-  },
-  "dns": {
-    "servers": [
-      "https+local://8.8.8.8/dns-query"
-    ]
-  },
-  "inbounds": [{
-    "port": $localPort,
-    "listen": "127.0.0.1",
-    "protocol": "socks",
-    "settings": {
-      "udp": true
-    },
-    "sniffing": {
-      "enabled": true,
-      "destOverride": ["http", "tls"]
-    }
-  }],
-  "routing": {
-    "domainStrategy": "AsIs",
-    "rules": [
-      { "type": "field", "network": "udp", "port": "53", "outboundTag": "dns-out" },
-      { "type": "field", "network": "udp", "outboundTag": "block" },
-      { "type": "field", "network": "tcp", "outboundTag": "proxy" }
-    ]
-  },
-  "outbounds": [
-    {
-      "tag": "proxy",
-        "protocol": "vless",
-        "settings": {
-          "vnext": [{
-            "address": "$resolvedIp",
-            "port": 443,
-            "users": [{ "id": "$uuid", "encryption": "none", "level": 0 }]
-          }]
-        },
-        "streamSettings": {
-          "network": "ws",
-          "security": "tls",
-          "tlsSettings": {
-            "serverName": "$sni",
-            "allowInsecure": false,
-            "fingerprint": "chrome"
-          },
-          "wsSettings": {
-            "path": "/?ed=2048",
-            "headers": { "Host": "$sni" }
-          },
-          "sockopt": {
-            "dialerProxy": "fragment-out",
-            "tcpNoDelay": true
-          }
-        }
-    },
-    {
-      "tag": "fragment-out",
-      "protocol": "freedom",
-      "settings": {
-        "fragment": {
-          "packets": "1-3",
-          "length": "20-50",
-          "interval": "10-20"
-        }
-      },
-      "streamSettings": {
-        "sockopt": {
-          "tcpNoDelay": true
-        }
-      }
-    },
-    {
-      "tag": "block",
-      "protocol": "blackhole"
-    },
-    {
-      "tag": "dns-out",
-      "protocol": "dns"
-    }
-  ]
-}""".trimIndent()
-            
+                "log": { "loglevel": "debug" },
+                "dns": { "servers": ["https+local://8.8.8.8/dns-query"] },
+                "inbounds": [{
+                    "port": localPort,
+                    "listen": "127.0.0.1",
+                    "protocol": "socks",
+                    "settings": { "udp": true },
+                    "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+                }],
+                "routing": {
+                    "domainStrategy": "AsIs",
+                    "rules": [
+                        { "type": "field", "network": "udp", "port": "53", "outboundTag": "dns-out" },
+                        { "type": "field", "network": "tcp", "outboundTag": "proxy" },
+                        { "type": "field", "network": "udp", "outboundTag": "proxy" }
+                    ]
+                },
+                "outbounds": [
+                    $outboundJson,
+                    { "tag": "dns-out", "protocol": "dns" }
+                ]
+            }"""
+
             configFile.writeText(configJson)
             
-            Log.i("TunnelVpnService", "Starting Xray-core for VLESS -> $remoteHost:$remotePort (SNI: $sni)")
+            android.util.Log.i("TunnelVpnService", "Starting Xray-core -> $remoteHost:$remotePort (Method: $method)")
             val pb = ProcessBuilder(xrayPath, "-c", configFile.absolutePath)
             pb.directory(cacheDir)
             pb.redirectErrorStream(true)
@@ -350,48 +336,15 @@ val byedpiArgsStr = prefs.getString("byedpi_args", "--split 1 --auto=torst --tls
                     val reader = java.io.BufferedReader(java.io.InputStreamReader(xrayProcess!!.inputStream))
                     var line: String?
                     while (reader.readLine().also { line = it } != null) {
-                        Log.d("XrayCore", line ?: "")
+                        android.util.Log.d("XrayCore", line ?: "")
                     }
                 } catch (e: Exception) {}
             }.start()
             
             Thread.sleep(1000) // Wait for Xray to initialize
         } catch (e: Exception) {
-            Log.e("TunnelVpnService", "Failed to start Xray: ${e.message}")
-        }
-    }
-
-    private fun startShadowsocksLocal(remoteHost: String, remotePort: Int, method: String, password: String, localPort: Int) {
-        try {
-            val ssPath = File(applicationInfo.nativeLibraryDir, "libsslocal.so").absolutePath
-            val configFile = File(cacheDir, "ss_config.json")
-            val configJson = """{
-              "server": "$remoteHost",
-              "server_port": $remotePort,
-              "password": "$password",
-              "method": "$method",
-              "local_address": "127.0.0.1",
-              "local_port": $localPort
-            }"""
-            configFile.writeText(configJson)
-            
-            Log.i("TunnelVpnService", "Starting sslocal for SS -> $remoteHost:$remotePort")
-            val pb = ProcessBuilder(ssPath, "-c", configFile.absolutePath)
-            pb.directory(cacheDir)
-            pb.redirectErrorStream(true)
-            ssProcess = pb.start()
-            Thread {
-                try {
-                    val reader = java.io.BufferedReader(java.io.InputStreamReader(ssProcess!!.inputStream))
-                    var line: String?
-                    while (reader.readLine().also { line = it } != null) {
-                        Log.d("Shadowsocks", line ?: "")
-                    }
-                } catch (e: Exception) {}
-            }.start()
-            Thread.sleep(1000)
-        } catch (e: Exception) {
-            Log.e("TunnelVpnService", "Failed to start SS: ${e.message}")
+            android.util.Log.e("TunnelVpnService", "Failed to start Xray: ${e.message}")
         }
     }
 }
+
