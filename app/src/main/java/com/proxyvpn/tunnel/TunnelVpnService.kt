@@ -325,6 +325,7 @@ class TunnelVpnService : VpnService() {
             configFile.writeText(configJson)
             
             android.util.Log.i("TunnelVpnService", "Starting Xray-core -> $remoteHost:$remotePort (Method: $method)")
+            val xrayLogFile = java.io.File(cacheDir, "xray.log")
             val pb = ProcessBuilder(xrayPath, "-c", configFile.absolutePath)
             pb.directory(cacheDir)
             pb.redirectErrorStream(true)
@@ -333,12 +334,21 @@ class TunnelVpnService : VpnService() {
             
             Thread {
                 try {
+                    val writer = xrayLogFile.bufferedWriter()
                     val reader = java.io.BufferedReader(java.io.InputStreamReader(xrayProcess!!.inputStream))
                     var line: String?
                     while (reader.readLine().also { line = it } != null) {
                         android.util.Log.d("XrayCore", line ?: "")
+                        writer.write(line ?: "")
+                        writer.newLine()
+                        writer.flush()
                     }
-                } catch (e: Exception) {}
+                    writer.close()
+                    val exitCode = xrayProcess!!.waitFor()
+                    android.util.Log.e("XrayCore", "Xray process exited with code: $exitCode")
+                } catch (e: Exception) {
+                    android.util.Log.e("XrayCore", "Xray thread error: ${e.message}")
+                }
             }.start()
             
             Thread.sleep(1000) // Wait for Xray to initialize
