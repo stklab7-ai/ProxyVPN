@@ -244,7 +244,7 @@ class TunnelVpnService : VpnService() {
                     "settings": {
                         "vnext": [{
                             "address": "$resolvedIp",
-                            "port": remotePort,
+                            "port": $remotePort,
                             "users": [{ "id": "$password", "encryption": "none", "level": 0 }]
                         }]
                     },
@@ -278,7 +278,7 @@ class TunnelVpnService : VpnService() {
                     "settings": {
                         "servers": [{
                             "address": "$resolvedIp",
-                            "port": remotePort,
+                            "port": $remotePort,
                             "method": "$method",
                             "password": "$password",
                             "level": 0
@@ -302,7 +302,7 @@ class TunnelVpnService : VpnService() {
                 "log": { "loglevel": "debug" },
                 "dns": { "servers": ["https+local://8.8.8.8/dns-query"] },
                 "inbounds": [{
-                    "port": localPort,
+                    "port": $localPort,
                     "listen": "127.0.0.1",
                     "protocol": "socks",
                     "settings": { "udp": true },
