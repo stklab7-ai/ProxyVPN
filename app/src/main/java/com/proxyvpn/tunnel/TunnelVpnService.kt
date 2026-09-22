@@ -258,7 +258,7 @@ class TunnelVpnService : VpnService() {
                         },
                         "wsSettings": {
                             "path": "/?ed=2048",
-                            "headers": { "Host": "$remoteHost" }
+                            "host": "$remoteHost"
                         },
                         "sockopt": { "dialerProxy": "fragment-out", "tcpNoDelay": true }
                     }
@@ -292,7 +292,7 @@ class TunnelVpnService : VpnService() {
                     "settings": {
                         "servers": [{
                             "address": "$resolvedIp",
-                            "port": remotePort
+                            "port": $remotePort
                         }]
                     }
                 }"""
