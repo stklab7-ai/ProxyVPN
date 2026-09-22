@@ -107,7 +107,8 @@ fun FreeProxyApp(viewModel: MainViewModel = viewModel()) {
 
 @Composable
 fun SettingsScreen(viewModel: MainViewModel) {
-    val forceDns by viewModel.forceDns.collectAsState()
+            val forceDns by viewModel.forceDns.collectAsState()
+        val encryptedDns by viewModel.encryptedDns.collectAsState()
     val byedpi by viewModel.byedpi.collectAsState()
     
     var showAddDialog by remember { mutableStateOf(false) }
@@ -219,6 +220,22 @@ fun SettingsScreen(viewModel: MainViewModel) {
                     Text("Блокирует Private DNS Android (порт 853), заставляя систему использовать обычный DNS внутри туннеля.", color = Color.Gray, fontSize = 12.sp)
                 }
                 Switch(checked = forceDns, onCheckedChange = { viewModel.toggleForceDns() })
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Шифрованный DNS (DoH)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("Перехват DNS-запросов на уровне IP и отправка по HTTPS.", color = Color.Gray, fontSize = 12.sp)
+                }
+                Switch(checked = encryptedDns, onCheckedChange = { viewModel.toggleEncryptedDns() })
             }
         }
 

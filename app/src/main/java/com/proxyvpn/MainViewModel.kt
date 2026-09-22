@@ -212,6 +212,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _forceDns = MutableStateFlow(prefs.getBoolean("force_dns", false))
     val forceDns = _forceDns.asStateFlow()
+    
+    private val _encryptedDns = MutableStateFlow(prefs.getBoolean("encrypted_dns", false))
+    val encryptedDns = _encryptedDns.asStateFlow()
+    
+    fun toggleEncryptedDns() {
+        val newVal = !_encryptedDns.value
+        _encryptedDns.value = newVal
+        prefs.edit().putBoolean("encrypted_dns", newVal).apply()
+    }
 
     private val _byedpi = MutableStateFlow(prefs.getBoolean("byedpi", false))
     val byedpi = _byedpi.asStateFlow()

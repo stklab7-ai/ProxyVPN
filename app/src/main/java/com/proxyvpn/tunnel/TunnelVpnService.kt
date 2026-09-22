@@ -253,7 +253,7 @@ val byedpiArgsStr = prefs.getString("byedpi_args", "--split 1 --auto=torst --tls
             // Generate Xray config for VLESS over WebSocket (Cloudflare)
             val configJson = """{
   "log": {
-    "loglevel": "warning"
+    "loglevel": "debug"
   },
   "dns": {
     "servers": [
@@ -283,26 +283,31 @@ val byedpiArgsStr = prefs.getString("byedpi_args", "--split 1 --auto=torst --tls
   "outbounds": [
     {
       "tag": "proxy",
-      "protocol": "vless",
-      "settings": {
-        "vnext": [{
-          "address": "$resolvedIp",
-          "port": 80,
-          "users": [{ "id": "$uuid", "encryption": "none", "level": 0 }]
-        }]
-      },
-      "streamSettings": {
-        "network": "ws",
-        "security": "none",
-        "wsSettings": {
-          "path": "/",
-          "headers": { "Host": "$sni" }
+        "protocol": "vless",
+        "settings": {
+          "vnext": [{
+            "address": "$resolvedIp",
+            "port": 443,
+            "users": [{ "id": "$uuid", "encryption": "none", "level": 0 }]
+          }]
         },
-        "sockopt": {
-          "dialerProxy": "fragment-out",
-          "tcpNoDelay": true
+        "streamSettings": {
+          "network": "ws",
+          "security": "tls",
+          "tlsSettings": {
+            "serverName": "$sni",
+            "allowInsecure": false,
+            "fingerprint": "chrome"
+          },
+          "wsSettings": {
+            "path": "/?ed=2048",
+            "headers": { "Host": "$sni" }
+          },
+          "sockopt": {
+            "dialerProxy": "fragment-out",
+            "tcpNoDelay": true
+          }
         }
-      }
     },
     {
       "tag": "fragment-out",
