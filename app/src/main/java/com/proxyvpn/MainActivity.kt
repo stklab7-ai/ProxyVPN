@@ -14,6 +14,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -373,7 +374,22 @@ fun ProxyListScreen(viewModel: MainViewModel) {
                     modifier = androidx.compose.ui.Modifier
                         .size(160.dp)
                         .clip(androidx.compose.foundation.shape.CircleShape)
-                        .background(if (isVpnActive) androidx.compose.ui.graphics.Color(0xFFE53935) else androidx.compose.ui.graphics.Color(0xFF238636))
+                        .background(
+                            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = if (isVpnActive) listOf(
+                                    androidx.compose.ui.graphics.Color(0xFFEF5350), 
+                                    androidx.compose.ui.graphics.Color(0xFFC62828)
+                                ) else listOf(
+                                    androidx.compose.ui.graphics.Color(0xFF66BB6A),
+                                    androidx.compose.ui.graphics.Color(0xFF2E7D32)
+                                )
+                            )
+                        )
+                        .border(
+                            width = 4.dp,
+                            color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.2f),
+                            shape = androidx.compose.foundation.shape.CircleShape
+                        )
                         .clickable { toggleVpnMain() },
                     contentAlignment = androidx.compose.ui.Alignment.Center
                 ) {
@@ -463,26 +479,68 @@ fun ProxyListScreen(viewModel: MainViewModel) {
                     androidx.compose.foundation.layout.Row(
                         modifier = androidx.compose.ui.Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                            .padding(vertical = 6.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
                             .background(if (isSelected) androidx.compose.ui.graphics.Color(0xFF1F2937) else CardBg)
                             .clickable { selectProxyFromList(proxy) }
-                            .padding(start = 12.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+                            .padding(start = 16.dp, end = 8.dp, top = 16.dp, bottom = 16.dp),
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                     ) {
                         androidx.compose.foundation.layout.Column(modifier = androidx.compose.ui.Modifier.weight(1f)) {
-                            androidx.compose.material3.Text(
-                                text = if (proxy.method == "VLESS") "VLESS Cloudflare" else "${proxy.ip}:${proxy.port}",
-                                color = if (isSelected) androidx.compose.ui.graphics.Color(0xFF4CAF50) else androidx.compose.ui.graphics.Color(0xFFF0F6FC),
-                                fontSize = 14.sp,
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal
-                            )
-                            androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.height(4.dp))
-                            androidx.compose.material3.Text(
-                                text = if (proxy.method == "VLESS") "CF Worker" else "${proxy.country} | SOCKS5",
-                                color = TextSecondary,
-                                fontSize = 12.sp
+                            androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                androidx.compose.material3.Text(
+                                    text = getFlagEmoji(proxy.country),
+                                    fontSize = 18.sp,
+                                    modifier = androidx.compose.ui.Modifier.padding(end = 8.dp)
+                                )
+                                androidx.compose.material3.Text(
+                                    text = if (proxy.method == "VLESS") "VLESS Cloudflare" else "${proxy.ip}:${proxy.port}",
+                                    color = if (isSelected) androidx.compose.ui.graphics.Color(0xFF66BB6A) else androidx.compose.ui.graphics.Color(0xFFF0F6FC),
+                                    fontSize = 15.sp,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium
+                                )
+                            }
+                            androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.height(6.dp))
+                            androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                androidx.compose.material3.Text(
+                                    text = if (proxy.method == "VLESS") "CF Worker" else "${proxy.country} | SOCKS5",
+                                    color = TextSecondary,
+                                    fontSize = 13.sp
+                                )
+                                androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.width(12.dp))
+                                androidx.compose.material3.Icon(
+                                    painter = androidx.compose.ui.res.painterResource(android.R.drawable.presence_online),
+                                    contentDescription = "Ping",
+                                    tint = if (proxy.ping in 1..200) androidx.compose.ui.graphics.Color(0xFF66BB6A) 
+                                           else if (proxy.ping in 201..500) androidx.compose.ui.graphics.Color(0xFFFFCA28) 
+                                           else androidx.compose.ui.graphics.Color(0xFFEF5350),
+                                    modifier = androidx.compose.ui.Modifier.size(10.dp).padding(end = 4.dp)
+                                )
+                                androidx.compose.material3.Text(
+                                    text = if (proxy.ping > 0) "${proxy.ping} ms" else "-- ms",
+                                    color = TextSecondary,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+
+                        androidx.compose.material3.IconButton(
+                            onClick = {
+                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("tg://proxy?server=${proxy.ip}&port=${proxy.port}&type=socks5"))
+                                try {
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    android.widget.Toast.makeText(context, "Telegram не установлен", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = androidx.compose.ui.Modifier.size(36.dp)
+                        ) {
+                            androidx.compose.material3.Icon(
+                                painter = androidx.compose.ui.res.painterResource(id = com.proxyvpn.R.drawable.ic_telegram),
+                                contentDescription = "Telegram",
+                                tint = androidx.compose.ui.graphics.Color.Unspecified,
+                                modifier = androidx.compose.ui.Modifier.padding(4.dp)
                             )
                         }
 
@@ -553,4 +611,60 @@ private fun stopVpnService(context: Context) {
         action = TunnelVpnService.ACTION_STOP
     }
     context.startService(intent)
+}
+
+fun getFlagEmoji(country: String): String {
+    if (country == "Global" || country.length < 2) return "🌍"
+    if (country.length == 2) {
+        val c = country.uppercase()
+        val first = c[0].code - 0x41 + 0x1F1E6
+        val second = c[1].code - 0x41 + 0x1F1E6
+        return String(Character.toChars(first)) + String(Character.toChars(second))
+    }
+    return "🌍"
+}
+
+@Composable
+fun AppExceptionsDialog(onDismiss: () -> Unit, context: android.content.Context) {
+    val pm = context.packageManager
+    val packages = androidx.compose.runtime.remember {
+        pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+            .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
+            .sortedBy { it.loadLabel(pm).toString() }
+    }
+    val prefs = context.getSharedPreferences("vpn_settings", android.content.Context.MODE_PRIVATE)
+    val bypassed = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateListOf<String>().apply { addAll(prefs.getStringSet("bypassed_apps", setOf()) ?: setOf()) } }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { androidx.compose.material3.Text("Исключения (не через VPN)") },
+        text = {
+            androidx.compose.foundation.lazy.LazyColumn {
+                items(packages.size) { index ->
+                    val app = packages[index]
+                    val isChecked = bypassed.contains(app.packageName)
+                    androidx.compose.foundation.layout.Row(
+                        modifier = androidx.compose.ui.Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (isChecked) bypassed.remove(app.packageName) else bypassed.add(app.packageName)
+                                prefs.edit().putStringSet("bypassed_apps", bypassed.toSet()).apply()
+                            }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        androidx.compose.material3.Checkbox(
+                            checked = isChecked,
+                            onCheckedChange = null
+                        )
+                        androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.width(8.dp))
+                        androidx.compose.material3.Text(text = app.loadLabel(pm).toString(), fontSize = 14.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { androidx.compose.material3.Text("Готово") }
+        }
+    )
 }

@@ -69,6 +69,16 @@ class TunnelVpnService : VpnService() {
                     
                 try {
                     builder.addDisallowedApplication(packageName)
+                    
+                    val prefs = getSharedPreferences("vpn_settings", android.content.Context.MODE_PRIVATE)
+                    val bypassedApps = prefs.getStringSet("bypassed_apps", setOf()) ?: setOf()
+                    for (app in bypassedApps) {
+                        try {
+                            builder.addDisallowedApplication(app)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
