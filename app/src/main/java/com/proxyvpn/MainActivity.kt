@@ -297,9 +297,9 @@ fun ProxyListScreen(viewModel: MainViewModel) {
     val isLoading by viewModel.isLoadingProxies.collectAsState()
     val isVpnActive by viewModel.isVpnActive.collectAsState()
     val selectedProxy by viewModel.selectedProxy.collectAsState()
-    val context = LocalContext.current
+    val context = androidx.compose.ui.platform.LocalContext.current
 
-    val vpnLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+    val vpnLauncher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK) {
             selectedProxy?.let { proxy ->
                 startVpnService(context, proxy.ip, proxy.port, proxy.method, proxy.password)
@@ -308,16 +308,37 @@ fun ProxyListScreen(viewModel: MainViewModel) {
         }
     }
 
-    var showFavorites by remember { mutableStateOf(false) }
+    var showFavorites by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val displayedProxies = proxies.filter { !showFavorites || it.isFavorite }
 
-    val toggleVpn: (ProxyItem) -> Unit = { proxy ->
-        if (isVpnActive && proxy == selectedProxy) {
+    val toggleVpnMain: () -> Unit = {
+        if (isVpnActive) {
             stopVpnService(context)
             viewModel.setVpnActive(false)
         } else {
-            viewModel.selectProxy(proxy)
-            val intent = VpnService.prepare(context)
+            val proxyToStart = selectedProxy ?: displayedProxies.firstOrNull()
+            if (proxyToStart != null) {
+                if (selectedProxy != proxyToStart) {
+                    viewModel.selectProxy(proxyToStart)
+                }
+                val intent = android.net.VpnService.prepare(context)
+                if (intent != null) {
+                    vpnLauncher.launch(intent)
+                } else {
+                    startVpnService(context, proxyToStart.ip, proxyToStart.port, proxyToStart.method, proxyToStart.password)
+                    viewModel.setVpnActive(true)
+                }
+            } else {
+                android.widget.Toast.makeText(context, "Нет доступных серверов", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val selectProxyFromList: (com.proxyvpn.ProxyItem) -> Unit = { proxy ->
+        viewModel.selectProxy(proxy)
+        if (isVpnActive) {
+            stopVpnService(context)
+            val intent = android.net.VpnService.prepare(context)
             if (intent != null) {
                 vpnLauncher.launch(intent)
             } else {
@@ -327,148 +348,162 @@ fun ProxyListScreen(viewModel: MainViewModel) {
         }
     }
 
-    LaunchedEffect(Unit) {
+    androidx.compose.runtime.LaunchedEffect(Unit) {
         viewModel.fetchProxies(forceRefresh = false)
     }
 
+    androidx.compose.foundation.layout.Box(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
+        androidx.compose.foundation.layout.Column(modifier = androidx.compose.ui.Modifier.fillMaxSize().padding(16.dp)) {
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-
-        Text(
-            text = "FreeProxy",
-            fontSize = 24.sp,
-            color = TextPrimary,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 16.dp),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-        )
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(CardBg)
-                .padding(12.dp)
-                .padding(bottom = 12.dp)
-        ) {
-            Text(
-                text = if (isVpnActive) "VPN Активен: ${selectedProxy?.ip}:${selectedProxy?.port}" else if (isLoading) "Поиск прокси..." else "Готов к работе",
-                color = if (isVpnActive) Color(0xFF4CAF50) else TextSecondary,
-                fontSize = 14.sp
-            )
-        }
-
-        if (isLoading) {
-            LinearProgressIndicator(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                color = TextPrimary
-            )
-        } else {
-            Spacer(modifier = Modifier.height(15.dp))
-        }
-
-        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-            Button(
-                onClick = { viewModel.fetchProxies(forceRefresh = true) },
-                modifier = Modifier.weight(1f).height(44.dp).padding(end = 4.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Text("🔍 SOCKS5", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Прокси (${displayedProxies.size})",
+            androidx.compose.material3.Text(
+                text = "ProxyVPN V5",
+                fontSize = 28.sp,
                 color = TextPrimary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                modifier = androidx.compose.ui.Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 24.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
-            Row {
-                Button(
-                    onClick = { showFavorites = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = if (!showFavorites) Color(0xFF238636) else Color.Transparent),
-                    modifier = Modifier.height(32.dp)
-                ) { Text("Все", color = Color.White, fontSize = 12.sp) }
-                Button(
-                    onClick = { showFavorites = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = if (showFavorites) Color(0xFF238636) else Color.Transparent),
-                    modifier = Modifier.height(32.dp)
-                ) { Text("Избранные", color = Color.White, fontSize = 12.sp) }
-            }
-        }
 
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            items(displayedProxies.size) { index ->
-                val proxy = displayedProxies[index]
-                val isRunningThisProxy = isVpnActive && proxy == selectedProxy
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(if (isRunningThisProxy) Color(0xFF1F2937) else Color.Transparent)
-                        .clickable { toggleVpn(proxy) }
-                        .padding(start = 12.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            // Big Connect Button
+            androidx.compose.foundation.layout.Box(
+                modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
+                contentAlignment = androidx.compose.ui.Alignment.Center
+            ) {
+                androidx.compose.foundation.layout.Box(
+                    modifier = androidx.compose.ui.Modifier
+                        .size(160.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(if (isVpnActive) androidx.compose.ui.graphics.Color(0xFFE53935) else androidx.compose.ui.graphics.Color(0xFF238636))
+                        .clickable { toggleVpnMain() },
+                    contentAlignment = androidx.compose.ui.Alignment.Center
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (proxy.method == "VLESS") "VLESS Cloudflare" else "${proxy.ip}:${proxy.port}",
-                            color = if (isRunningThisProxy) Color(0xFF4CAF50) else Color(0xFFF0F6FC),
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = if (proxy.method == "VLESS") "CF Worker" else "${proxy.country} | SOCKS5",
-                            color = TextSecondary,
-                            fontSize = 10.sp
-                        )
-                    }
+                    androidx.compose.material3.Text(
+                        text = if (isVpnActive) "ОТКЛЮЧИТЬ" else "ПОДКЛЮЧИТЬ",
+                        color = androidx.compose.ui.graphics.Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                }
+            }
 
-                    IconButton(
-                        onClick = { viewModel.toggleFavorite(proxy) },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (proxy.isFavorite) Icons.Filled.Star else Icons.Outlined.Star,
-                            contentDescription = "Favorite",
-                            tint = if (proxy.isFavorite) Color(0xFFFFD700) else TextSecondary,
-                            modifier = Modifier.padding(6.dp)
-                        )
-                    }
+            androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.height(24.dp))
 
-                    IconButton(
-                        onClick = {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("tg://proxy?server=${proxy.ip}&port=${proxy.port}&type=socks5"))
-                            try {
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Telegram не установлен", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier.size(36.dp)
+            androidx.compose.material3.Text(
+                text = if (isVpnActive) "Статус: Подключено" else "Статус: Отключено",
+                color = if (isVpnActive) androidx.compose.ui.graphics.Color(0xFF4CAF50) else TextSecondary,
+                fontSize = 16.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+
+            androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+
+            val currentProxyName = selectedProxy?.let { 
+                if (it.method == "VLESS") "VLESS Cloudflare" else "${it.ip}:${it.port}" 
+            } ?: "Не выбран"
+
+            androidx.compose.material3.Text(
+                text = "Текущий сервер: $currentProxyName",
+                color = TextSecondary,
+                fontSize = 14.sp,
+                modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+
+            androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.height(24.dp))
+
+            if (isLoading) {
+                androidx.compose.material3.LinearProgressIndicator(
+                    modifier = androidx.compose.ui.Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    color = TextPrimary
+                )
+            }
+
+            androidx.compose.foundation.layout.Row(
+                modifier = androidx.compose.ui.Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                androidx.compose.material3.Text(
+                    text = "Список серверов (${displayedProxies.size})",
+                    color = TextPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                )
+                androidx.compose.foundation.layout.Row {
+                    androidx.compose.material3.Button(
+                        onClick = { showFavorites = false },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = if (!showFavorites) androidx.compose.ui.graphics.Color(0xFF238636) else androidx.compose.ui.graphics.Color.Transparent),
+                        modifier = androidx.compose.ui.Modifier.height(32.dp).padding(end = 4.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) { androidx.compose.material3.Text("Все", color = androidx.compose.ui.graphics.Color.White, fontSize = 12.sp) }
+                    
+                    androidx.compose.material3.Button(
+                        onClick = { showFavorites = true },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = if (showFavorites) androidx.compose.ui.graphics.Color(0xFF238636) else androidx.compose.ui.graphics.Color.Transparent),
+                        modifier = androidx.compose.ui.Modifier.height(32.dp).padding(end = 4.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) { androidx.compose.material3.Text("Избранное", color = androidx.compose.ui.graphics.Color.White, fontSize = 12.sp) }
+
+                    androidx.compose.material3.Button(
+                        onClick = { viewModel.fetchProxies(forceRefresh = true) },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF1F2937)),
+                        modifier = androidx.compose.ui.Modifier.height(32.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) { androidx.compose.material3.Text("Обновить", color = androidx.compose.ui.graphics.Color.White, fontSize = 12.sp) }
+                }
+            }
+
+            androidx.compose.foundation.lazy.LazyColumn(modifier = androidx.compose.ui.Modifier.weight(1f)) {
+                items(displayedProxies.size) { index ->
+                    val proxy = displayedProxies[index]
+                    val isSelected = proxy == selectedProxy
+
+                    androidx.compose.foundation.layout.Row(
+                        modifier = androidx.compose.ui.Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                            .background(if (isSelected) androidx.compose.ui.graphics.Color(0xFF1F2937) else CardBg)
+                            .clickable { selectProxyFromList(proxy) }
+                            .padding(start = 12.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                     ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_telegram),
-                            contentDescription = "Telegram",
-                            tint = Color.Unspecified,
-                            modifier = Modifier.padding(6.dp)
-                        )
+                        androidx.compose.foundation.layout.Column(modifier = androidx.compose.ui.Modifier.weight(1f)) {
+                            androidx.compose.material3.Text(
+                                text = if (proxy.method == "VLESS") "VLESS Cloudflare" else "${proxy.ip}:${proxy.port}",
+                                color = if (isSelected) androidx.compose.ui.graphics.Color(0xFF4CAF50) else androidx.compose.ui.graphics.Color(0xFFF0F6FC),
+                                fontSize = 14.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal
+                            )
+                            androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.height(4.dp))
+                            androidx.compose.material3.Text(
+                                text = if (proxy.method == "VLESS") "CF Worker" else "${proxy.country} | SOCKS5",
+                                color = TextSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        androidx.compose.material3.IconButton(
+                            onClick = { viewModel.toggleFavorite(proxy) },
+                            modifier = androidx.compose.ui.Modifier.size(36.dp)
+                        ) {
+                            androidx.compose.material3.Icon(
+                                imageVector = if (proxy.isFavorite) androidx.compose.material.icons.Icons.Filled.Star else androidx.compose.material.icons.Icons.Outlined.Star,
+                                contentDescription = "Favorite",
+                                tint = if (proxy.isFavorite) androidx.compose.ui.graphics.Color(0xFFFFD700) else TextSecondary,
+                                modifier = androidx.compose.ui.Modifier.padding(6.dp)
+                            )
+                        }
                     }
                 }
             }
         }
     }
 }
-}
+
 
 @Composable
 fun ToolsScreen(viewModel: MainViewModel) {
