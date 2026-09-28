@@ -59,6 +59,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
 
+    
+    private fun loadProxiesPool(): List<ProxyItem> {
+        val json = prefs.getString("proxy_pool", "[]")
+        val listType = object : com.google.gson.reflect.TypeToken<List<ProxyItem>>() {}.type
+        return gson.fromJson(json, listType) ?: emptyList()
+    }
+
+    private fun saveProxiesPool(pool: List<ProxyItem>) {
+        prefs.edit().putString("proxy_pool", gson.toJson(pool)).apply()
+    }
+
     private fun getFavorites(): List<ProxyItem> {
         val json = prefs.getString("favs_v3", "[]")
         val type = object : TypeToken<List<ProxyItem>>() {}.type
@@ -119,12 +130,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
 
     init {
-        _proxies.value = getFavorites()
-        fetchProxies(forceRefresh = false)
-        // Silent quick check of existing
-        viewModelScope.launch {
-            kotlinx.coroutines.delay(1000)
-            quickCheckProxies()
+        val pool = loadProxiesPool()
+        val favs = getFavorites()
+        
+        // Merge favs into pool if not present
+        val merged = pool.toMutableList()
+        for (f in favs) {
+            if (merged.none { it.ip == f.ip && it.port == f.port }) {
+                merged.add(f)
+            } else {
+                // Update isFavorite flag
+                val idx = merged.indexOfFirst { it.ip == f.ip && it.port == f.port }
+                if (idx != -1) merged[idx] = merged[idx].copy(isFavorite = true)
+            }
+        }
+        
+        _proxies.value = merged
+        
+        if (merged.count { !it.isFavorite } == 0) {
+            fetchProxies(forceRefresh = true)
+        } else {
+            viewModelScope.launch {
+                quickCheckProxies()
+            }
         }
     }
 
@@ -153,6 +181,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 
                 val finalProxies = current.filter { p -> p.isFavorite || tested.any { it.ip == p.ip && it.port == p.port } }
                 _proxies.value = finalProxies
+                saveProxiesPool(finalProxies)
                 
                 if (finalProxies.count { !it.isFavorite } < 6) {
                     fetchProxies(forceRefresh = true)
@@ -198,7 +227,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     
                     notScrapedFavs + scraped
                 }
-                _proxies.value = result
+                
+                // Merge with existing pool
+                val currentPool = _proxies.value.toMutableList()
+                for (newProxy in result) {
+                    if (currentPool.none { it.ip == newProxy.ip && it.port == newProxy.port }) {
+                        currentPool.add(newProxy)
+                    }
+                }
+                // Keep max 50 proxies to avoid bloat
+                val limitedPool = currentPool.take(50)
+                _proxies.value = limitedPool
+                saveProxiesPool(limitedPool)
                 if (result.isNotEmpty() && _selectedProxy.value == null) {
                     _selectedProxy.value = result[0]
                 }
