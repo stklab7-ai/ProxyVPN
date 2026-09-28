@@ -394,7 +394,7 @@ fun ProxyListScreen(viewModel: MainViewModel) {
                     contentAlignment = androidx.compose.ui.Alignment.Center
                 ) {
                     androidx.compose.material3.Text(
-                        text = if (isVpnActive) "ОТКЛЮЧИТЬ" else "ПОДКЛЮЧИТЬ",
+                        text = if (isVpnActive) "ОТКЛЮЧИТЬ" else "АВТО-ВЫБОР",
                         color = androidx.compose.ui.graphics.Color.White,
                         fontSize = 18.sp,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
